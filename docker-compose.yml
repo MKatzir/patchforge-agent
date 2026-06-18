@@ -1,0 +1,46 @@
+services:
+  agent-workspace:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - tools
+    volumes:
+      # 1. Mounts your project directory (agents, tools, target binaries)
+      - .:/app
+      
+      # 2. NEW: Saves your Connected Providers and API keys
+      - ./opencode_auth_backup:/root/.local/share/opencode
+      
+      # 3. NEW: Saves your Global UI settings and default models
+      - ./opencode_config_backup:/root/.config/opencode
+      
+    env_file:
+      - .env
+    tty: true
+    stdin_open: true
+
+  tools:
+    build:
+      context: .
+      dockerfile: Dockerfile.tools
+    image: patch-tools:latest
+    container_name: patch-tools
+    ports:
+      - '8080:8000'
+    volumes:
+      - ./binaries:/work/binaries
+      - ./output:/work/output
+      - ./cache:/work/cache
+      - ./ghidra_projects:/opt/ghidra/projects
+      - ./:/opt/patch-tools:ro
+      - ./ghidra_install:/opt/ghidra
+    environment:
+      GHIDRA_INSTALL_DIR: /opt/ghidra
+      WORK_DIR: /work
+      MAX_GHIDRA_JOBS: '1'
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: '4.0'

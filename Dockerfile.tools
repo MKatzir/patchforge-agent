@@ -1,0 +1,62 @@
+# Tools image: Python tools + optional Ghidra install (set GHIDRA_URL build-arg)
+FROM ubuntu:22.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG GHIDRA_URL=""  # set at build time if you want Docker to download Ghidra (e.g. --build-arg GHIDRA_URL=https://.../ghidra_xxx.zip)
+
+# Basic packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-venv \
+    build-essential gcc g++ make \
+    binutils file curl wget unzip ca-certificates \
+    openjdk-17-jdk \
+    nodejs npm \
+    git \
+    tini \
+ && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN useradd -m -s /bin/bash patch
+WORKDIR /opt/patch-tools
+
+# Copy repo into image (build context should be repo root)
+COPY . /opt/patch-tools
+
+# Python deps for job server
+COPY requirements-tools.txt /opt/patch-tools/requirements-tools.txt
+RUN python3 -m pip install --upgrade pip setuptools wheel \
+ && python3 -m pip install -r /opt/patch-tools/requirements-tools.txt
+
+# Optional: Download and extract Ghidra if GHIDRA_URL provided at build time
+# Usage: docker build --build-arg GHIDRA_URL="https://..." -t patch-tools:latest -f Dockerfile.tools .
+RUN if [ -n "$GHIDRA_URL" ]; then \
+      mkdir -p /opt/ghidra_tmp && \
+      echo "Downloading Ghidra from $GHIDRA_URL" && \
+      curl -L --retry 5 "$GHIDRA_URL" -o /tmp/ghidra.zip && \
+      unzip /tmp/ghidra.zip -d /opt && \
+      # move extracted dir to /opt/ghidra (works when archive yields a single dir)
+      mv /opt/ghidra_* /opt/ghidra || true && \
+      rm -rf /tmp/ghidra.zip ; \
+    fi
+
+# Ensure scripts are executable
+RUN chmod +x /opt/patch-tools/tools/*.py || true
+COPY entrypoint.sh /opt/patch-tools/entrypoint.sh
+RUN sed -i 's/\r$//' /opt/patch-tools/entrypoint.sh
+RUN chmod +x /opt/patch-tools/entrypoint.sh
+
+# Expose API port
+EXPOSE 8000
+
+# Create cache/out dirs and chown to patch
+RUN mkdir -p /work/binaries /work/output /work/cache /opt/ghidra/projects \
+ && chown -R patch:patch /work /opt/patch-tools /opt/ghidra /opt/ghidra/projects || true
+
+USER patch
+ENV GHIDRA_INSTALL_DIR=/opt/ghidra
+ENV WORK_DIR=/work
+ENV PYTHONUNBUFFERED=1
+ENV MAX_GHIDRA_JOBS=1
+WORKDIR /opt/patch-tools
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/opt/patch-tools/entrypoint.sh"]

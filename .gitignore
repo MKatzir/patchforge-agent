@@ -1,0 +1,27 @@
+# OS / Environment
+.env
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+**/node_modules/
+npm-debug.log
+
+# Huge Directories (Do not push Ghidra or target binaries)
+ghidra_install/
+binaries/
+cache/
+output/
+ghidra_projects/
+
+# Sensitive Authentication / Personal Settings
+opencode_auth_backup/
+opencode_config_backup/
+
+# Database / State
+harness/db/
+db/
+*.json
+!bom.json
+!package.json

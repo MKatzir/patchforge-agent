@@ -1,0 +1,24 @@
+# Git
+.git
+.gitignore
+
+# Node dependencies and symlinks
+node_modules
+.opencode/node_modules
+npm-debug.log
+
+# Massive directories that are volume-mounted at runtime anyway
+ghidra_install
+ghidra_projects
+binaries
+cache
+output
+opencode_auth_backup
+opencode_config_backup
+
+# Python cache
+__pycache__
+*.pyc
+# Globally ignore all node_modules anywhere in the project
+**/node_modules
+config_backup
