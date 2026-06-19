@@ -3,11 +3,6 @@
 /**
  * Symbol Analyzer Tool - TypeScript Wrapper (Refactored for OpenCode)
  * Extracts and analyzes symbols from binaries via FastAPI server.
- * 
- * This wrapper communicates with the FastAPI job server (http://tools:8000) instead
- * of spawning child processes. It sends HTTP requests and parses responses.
- * 
- * NOTE: Requires /symbol_analyzer endpoint on FastAPI server.
  */
 
 interface SymbolAnalyzerConfig {
@@ -22,10 +17,7 @@ interface ToolResult {
   execution_time_ms: number;
   data: any;
   summary: string;
-  metadata: {
-    ai_next_step?: string;
-    [key: string]: any;
-  };
+  metadata: { ai_next_step?: string; [key: string]: any };
 }
 
 async function runSymbolAnalyzer(config: SymbolAnalyzerConfig): Promise<ToolResult> {
@@ -36,43 +28,27 @@ async function runSymbolAnalyzer(config: SymbolAnalyzerConfig): Promise<ToolResu
       throw new Error('binary_path is required');
     }
 
-    // Build request payload
-    const payload: Record<string, any> = {
-      binary: config.binary_path
-    };
+    const payload: Record<string, any> = { binary: config.binary_path };
+    if (config.symbol_types) payload.symbol_types = config.symbol_types;
+    if (config.demangle !== undefined) payload.demangle = config.demangle;
 
-    if (config.symbol_types) {
-      payload.symbol_types = config.symbol_types;
-    }
-
-    if (config.demangle !== undefined) {
-      payload.demangle = config.demangle;
-    }
-
-    // Call FastAPI server at http://tools:8000/symbol_analyzer
     const apiUrl = 'http://tools:8000/symbol_analyzer';
     let response;
     try {
       response = await fetch(apiUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(60000)
       });
     } catch (fetchError) {
       const errorMsg = fetchError instanceof Error ? fetchError.message : String(fetchError);
-      const executionTime = Date.now() - startTime;
       return {
-        status: 'error',
-        tool_name: 'symbol_analyzer',
-        execution_time_ms: executionTime,
+        status: 'error', tool_name: 'symbol_analyzer',
+        execution_time_ms: Date.now() - startTime,
         data: { error: errorMsg },
         summary: `Failed to connect to FastAPI server at ${apiUrl}: ${errorMsg}`,
-        metadata: {
-          ai_next_step: 'Ensure the tools container is running on http://tools:8000'
-        }
+        metadata: { ai_next_step: 'Ensure the tools container is running on http://tools:8000' }
       };
     }
 
@@ -84,17 +60,12 @@ async function runSymbolAnalyzer(config: SymbolAnalyzerConfig): Promise<ToolResu
       } catch {
         errorDetail = await response.text();
       }
-
-      const executionTime = Date.now() - startTime;
       return {
-        status: 'error',
-        tool_name: 'symbol_analyzer',
-        execution_time_ms: executionTime,
+        status: 'error', tool_name: 'symbol_analyzer',
+        execution_time_ms: Date.now() - startTime,
         data: { error: `HTTP ${response.status}`, details: errorDetail },
         summary: `FastAPI server returned error: ${response.status} - ${errorDetail}`,
-        metadata: {
-          ai_next_step: 'Verify binary file exists and is in a supported format'
-        }
+        metadata: { ai_next_step: 'Verify binary file exists and is in a supported format' }
       };
     }
 
@@ -102,27 +73,20 @@ async function runSymbolAnalyzer(config: SymbolAnalyzerConfig): Promise<ToolResu
     try {
       responseData = await response.json();
     } catch {
-      const executionTime = Date.now() - startTime;
       const rawText = await response.text();
       return {
-        status: 'error',
-        tool_name: 'symbol_analyzer',
-        execution_time_ms: executionTime,
+        status: 'error', tool_name: 'symbol_analyzer',
+        execution_time_ms: Date.now() - startTime,
         data: { raw: rawText },
         summary: 'Failed to parse FastAPI response as JSON',
-        metadata: {
-          ai_next_step: 'Check server logs for symbol extraction errors'
-        }
+        metadata: { ai_next_step: 'Check server logs for symbol extraction errors' }
       };
     }
 
-    const executionTime = Date.now() - startTime;
-
-    // Build successful result
     return {
       status: 'success',
       tool_name: 'symbol_analyzer',
-      execution_time_ms: executionTime,
+      execution_time_ms: Date.now() - startTime,
       data: responseData,
       summary: `Successfully extracted symbols from ${config.binary_path} (${responseData.count || '?'} symbols found)`,
       metadata: {
@@ -130,40 +94,26 @@ async function runSymbolAnalyzer(config: SymbolAnalyzerConfig): Promise<ToolResu
       }
     };
   } catch (error) {
-    const executionTime = Date.now() - startTime;
     const message = error instanceof Error ? error.message : String(error);
-
     return {
-      status: 'error',
-      tool_name: 'symbol_analyzer',
-      execution_time_ms: executionTime,
+      status: 'error', tool_name: 'symbol_analyzer',
+      execution_time_ms: Date.now() - startTime,
       data: { error: message },
       summary: `Symbol analyzer error: ${message}`,
-      metadata: {
-        ai_next_step: 'Check configuration and ensure binary file is valid'
-      }
+      metadata: { ai_next_step: 'Check configuration and ensure binary file is valid' }
     };
   }
 }
 
-// CLI interface for direct invocation
 async function main() {
   const args = process.argv.slice(2);
-  const config: SymbolAnalyzerConfig = {
-    binary_path: ''
-  };
+  const config: SymbolAnalyzerConfig = { binary_path: '' };
 
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
-      case '--binary':
-        config.binary_path = args[++i];
-        break;
-      case '--symbol-types':
-        config.symbol_types = args[++i];
-        break;
-      case '--demangle':
-        config.demangle = true;
-        break;
+      case '--binary': config.binary_path = args[++i]; break;
+      case '--symbol-types': config.symbol_types = args[++i]; break;
+      case '--demangle': config.demangle = true; break;
     }
   }
 
@@ -174,9 +124,7 @@ async function main() {
 if (require.main === module) {
   main().catch((err) => {
     console.error(JSON.stringify({
-      status: 'error',
-      tool_name: 'symbol_analyzer',
-      execution_time_ms: 0,
+      status: 'error', tool_name: 'symbol_analyzer', execution_time_ms: 0,
       data: { error: err.message },
       summary: `Fatal error: ${err.message}`,
       metadata: { ai_next_step: 'Check logs' }
@@ -186,30 +134,3 @@ if (require.main === module) {
 }
 
 export { runSymbolAnalyzer, SymbolAnalyzerConfig, ToolResult };
-
-
-async function main() {
-  const args = process.argv.slice(2);
-  const config: SymbolAnalyzerConfig = {
-    binary_path: '',
-    demangle: true,
-    output_format: 'json'
-  };
-
-  for (let i = 0; i < args.length; i++) {
-    switch (args[i]) {
-      case '--binary': config.binary_path = args[++i]; break;
-      case '--symbol-types': config.symbol_types = args[++i]; break;
-      case '--demangle': config.demangle = true; break;
-      case '--output-format': config.output_format = args[++i] as 'json' | 'text'; break;
-    }
-  }
-
-  const result = await runSymbolAnalyzer(config);
-  console.log(JSON.stringify(result, null, 2));
-}
-
-main().catch((error) => {
-  console.error('Fatal error:', error);
-  process.exit(1);
-});

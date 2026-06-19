@@ -4,17 +4,12 @@ services:
       context: .
       dockerfile: Dockerfile
     depends_on:
-      - tools
+      tools:
+        condition: service_healthy
     volumes:
-      # 1. Mounts your project directory (agents, tools, target binaries)
       - .:/app
-      
-      # 2. NEW: Saves your Connected Providers and API keys
       - ./opencode_auth_backup:/root/.local/share/opencode
-      
-      # 3. NEW: Saves your Global UI settings and default models
       - ./opencode_config_backup:/root/.config/opencode
-      
     env_file:
       - .env
     tty: true
@@ -39,6 +34,12 @@ services:
       GHIDRA_INSTALL_DIR: /opt/ghidra
       WORK_DIR: /work
       MAX_GHIDRA_JOBS: '1'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     deploy:
       resources:
         limits:

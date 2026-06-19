@@ -1,4 +1,4 @@
-Initialize the analysis pipeline. 
-The unpatched binary is located at '{unpatched}' and the patched binary is at '{patched}'. 
-Delegate to the @global-analyzer to begin the BinDiff phase immediately. 
-Do not stop until the @exploiter has generated a PoC and you have written the final report in {output_dir}/writeup.md.
+Initialize the analysis pipeline.
+The unpatched binary is located at '{unpatched}' and the patched binary is at '{patched}'.
+Delegate to the @global-analyzer to begin the BinDiff phase immediately.
+Do not stop until the @global-analyzer has completed the root-cause analysis and you have written the final defensive report in {output_dir}/writeup.md.

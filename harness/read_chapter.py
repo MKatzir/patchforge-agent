@@ -1,28 +1,29 @@
-﻿import sys
+#!/usr/bin/env python3
+"""
+Chapter Reader - Reads a saved chapter file and prints its contents.
+Usage: python3 read_chapter.py <chapter_id>
+"""
+
 import json
 import os
+import sys
 
-def main():
+CHAPTER_DB = os.path.join(os.path.dirname(__file__), 'db')
+
+def read_chapter(chapter_id: str) -> None:
+    chapter_file = os.path.join(CHAPTER_DB, f'chapter_{chapter_id}.json')
+
+    if not os.path.exists(chapter_file):
+        print(f'ERROR: chapter {chapter_id} not found at {chapter_file}', file=sys.stderr)
+        sys.exit(1)
+
+    with open(chapter_file, 'r', encoding='utf-8') as f:
+        chapter = json.load(f)
+
+    print(json.dumps(chapter, indent=2))
+
+if __name__ == '__main__':
     if len(sys.argv) != 2:
-        print("Usage: python3 read_chapter.py <chapter_id>")
+        print(f'Usage: python3 {sys.argv[0]} <chapter_id>')
         sys.exit(1)
-
-    chapter_id = sys.argv[1]
-    db_path = os.path.join("db", f"{chapter_id}.json")
-
-    try:
-        with open(db_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            
-        print(f"--- START {chapter_id} ---")
-        print(data.get("content", "No content found."))
-        print(f"--- END {chapter_id} ---")
-    except FileNotFoundError:
-        print(f"Error: {chapter_id} not found in Context DB.")
-        sys.exit(1)
-    except Exception as e:
-        print(f"Error reading chapter: {e}")
-        sys.exit(1)
-
-if __name__ == "__main__":
-    main()
+    read_chapter(sys.argv[1])

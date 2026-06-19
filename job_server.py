@@ -2,7 +2,6 @@
 import os
 import hashlib
 import json
-import shutil
 import subprocess
 import asyncio
 from fastapi import FastAPI, HTTPException
