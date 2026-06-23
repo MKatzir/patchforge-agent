@@ -1,0 +1,76 @@
+PROJECT REFACTORING & INFRASTRUCTURE SUMMARY
+
+This document outlines all architectural and repository changes applied to the autonomous patch-agent-lab project. The primary goal of this refactoring was to establish a reproducible, production-grade build environment, clear technical debt, and resolve critical Java dependency failures within the headless analysis pipeline.
+
+
+1. ROOT FILE SYSTEM CONSOLIDATION
+The root directory was heavily cluttered with temporary artifacts and backups. These have been swept into designated directories to maintain repository hygiene and ensure a clean workspace for collaborative development.
+
+- lib/ Created: Moved bx.zip from the root into this new directory. This isolates external dependencies from the core codebase.
+- Binaries Consolidated: Removed the duplicate sudo_vuln.bin from the root directory, ensuring all target files live canonically inside the binaries/ folder.
+- backups/ Created: Consolidated config_backup/, opencode_auth_backup/, and opencode_config_backup/ into a single root-level backup directory to eliminate visual noise.
+
+
+2. CACHE & MEMORY STATE RESET
+To prevent the agent from hallucinating or bleeding context between analysis runs, the memory and cache states have been completely zeroed out.
+
+- Deleted all 15 temporary JSON files (decomp_*.json and disasm_*.json) from the cache/ directory.
+- Generated .gitkeep files inside cache/ and output/ to ensure version control tracks the structural directories without committing the volatile data inside them.
+
+
+3. GIT AND DOCKER IGNORE CONFIGURATIONS
+The build context has been optimized to prevent local overrides and massive temporary files from polluting the repository or bloating the Docker image.
+
+Added to .gitignore:
+__pycache__/
+cache/*.json
+backups/
+db/*.json
+output/*
+!output/.gitkeep
+
+Added to .dockerignore:
+__pycache__/
+.git/
+backups/
+cache/
+db/
+output/
+
+
+4. TOOL REGISTRY REFACTORING
+The OpenCode tool schemas and their corresponding Python execution scripts have been modularized. This cleanly separates "the tools" from "the brain" and scales better as new capabilities are added.
+
+- Created tools/bindiff/ and migrated bindiff.py and bindiff.ts.
+- Created tools/ghidra/ and migrated all disassembly/decompilation scripts, alongside the internal ghidra_scripts/ directory.
+- Created tools/analysis/ and migrated the string and symbol analyzers.
+- Updated the internal execution paths within job_server.py to correctly map to these new subdirectories.
+
+
+5. THE BINEXPORT OMNI-TRANSPLANT (CRITICAL FIX)
+This represents the most significant infrastructure fix in the repository. Previous attempts to automate the BinExport installation for Ghidra 11.0.3 failed due to two deeply obscured issues: the Inception Zip Trap and the Java Protobuf Collision.
+
+- The Inception Zip Trap: The official GitHub release was packaged as a nested archive (a .zip inside a .zip). Standard extraction commands silently failed to expose the internal Java .jar files, causing "Plugin not found" errors in Jython.
+- The Protobuf Collision: When the plugin was forced to load, its packaged protobuf-java library collided with Ghidra's native protocol buffers in shared memory, causing fatal IllegalAccessError and NoClassDefFoundError JVM crashes.
+
+The Solution:
+The Dockerfile.tools build step was rewritten to execute an automated "Omni-Transplant" entirely offline. The Dockerfile now performs a double-unzip to bypass the packaging error. It then locates the new Protobuf library, overwrites all native Ghidra Protobuf instances, deletes the duplicates to prevent classloader collisions, and forcefully injects the remaining plugin files into Ghidra's /patch/ backdoor directory. This entirely bypasses the GUI-enablement requirement for headless execution.
+
+
+6. VOLUME MOUNT STANDARDIZATION
+Docker Compose configurations and path mappings were audited to prevent internal "directory not found" errors during execution.
+
+- Updated the agent-workspace service in docker-compose.yml to route local volumes to the new backups/ directory paths.
+- Standardized the tools service volume mount to securely map the host root directly to /opt/patch-tools:ro (read-only) while keeping /work/ boundaries strict.
+- Verified that job_server.py, run_pipeline.py, and entrypoint.sh utilize environment variables (WORK_DIR, GHIDRA_INSTALL_DIR) rather than brittle, hardcoded string paths.
+
+
+--------------------------------------------------------------------------------
+IMPACT SUMMARY
+--------------------------------------------------------------------------------
+Files Moved                 | 6 (Dependency zip, duplicate binary, backups, scripts)
+Directories Created         | 5 (lib/, backups/, tools/bindiff/, tools/ghidra/, tools/analysis/)
+State Reset                 | 15 JSON memory cache files permanently purged
+Configurations Hardened     | 4 (.gitignore, .dockerignore, docker-compose.yml, Dockerfile.tools)
+Pipeline Scripts Updated    | 1 (job_server.py path references resolved)
+Docker Build                | 100% automated offline BinExport plugin injection achieved

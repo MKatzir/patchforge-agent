@@ -8,8 +8,8 @@ services:
         condition: service_healthy
     volumes:
       - .:/app
-      - ./opencode_auth_backup:/root/.local/share/opencode
-      - ./opencode_config_backup:/root/.config/opencode
+      - ./backups/opencode_auth_backup:/root/.local/share/opencode
+      - ./backups/opencode_config_backup:/root/.config/opencode
     env_file:
       - .env
     tty: true
@@ -28,8 +28,7 @@ services:
       - ./output:/work/output
       - ./cache:/work/cache
       - ./ghidra_projects:/opt/ghidra/projects
-      - ./:/opt/patch-tools:ro
-      - ./ghidra_install:/opt/ghidra
+      - ./:/opt/patch-tools:ro 
     environment:
       GHIDRA_INSTALL_DIR: /opt/ghidra
       WORK_DIR: /work

@@ -11,7 +11,7 @@ from typing import Optional
 app = FastAPI(title="Patch Tools API")
 
 WORK_DIR = os.environ.get("WORK_DIR", "/work")
-GHIDRA_INSTALL_DIR = os.environ.get("GHIDRA_INSTALL_DIR", "/opt/ghidra")
+GHIDRA_INSTALL_DIR = os.environ.get("GHIDRA_INSTALL_DIR", "/app/ghidra_install")
 CACHE_DIR = os.path.join(WORK_DIR, "cache")
 OUTPUT_DIR = os.path.join(WORK_DIR, "output")
 MAX_GHIDRA = int(os.environ.get("MAX_GHIDRA_JOBS", "1"))
@@ -22,13 +22,16 @@ ghidra_sem = asyncio.Semaphore(MAX_GHIDRA)
 class BinPair(BaseModel):
     before: str
     after: str
-    similarity_threshold: Optional[float] = 0.7
+    similarity_threshold: Optional[float] = 0.95
+    min_block_size: Optional[int] = 10
+    opcode_only: Optional[bool] = False
 
 class FuncRequest(BaseModel):
     binary: str
     function_address: Optional[str] = None
     function_names: Optional[str] = None  # comma separated
     timeout: Optional[int] = 300
+    ignore_cache: Optional[bool] = False  # Allows bypassing the cache completely
 
 class StringAnalyzerRequest(BaseModel):
     binary: str
@@ -43,7 +46,6 @@ class SymbolAnalyzerRequest(BaseModel):
 
 # Helpers
 def abs_path(p: str) -> str:
-    # allow relative paths under WORK_DIR for safety
     if os.path.isabs(p):
         return p
     return os.path.normpath(os.path.join(WORK_DIR, p))
@@ -83,7 +85,11 @@ async def bindiff(pair: BinPair):
     after = abs_path(pair.after)
     if not os.path.exists(before) or not os.path.exists(after):
         raise HTTPException(status_code=404, detail="before/after binary not found")
-    cmd = ["python3", "tools/bindiff.py", "--before", before, "--after", after, "--similarity-threshold", str(pair.similarity_threshold), "--output-format", "json"]
+    cmd = ["python3", "tools/bindiff/bindiff.py", "--before", before, "--after", after, 
+           "--similarity-threshold", str(pair.similarity_threshold),
+           "--min-block-size", str(pair.min_block_size)]
+    if pair.opcode_only:
+        cmd.append("--opcode-only")
     code, out, err = await run_subproc(cmd, timeout=120)
     if code != 0:
         raise HTTPException(status_code=500, detail={"error": err, "stdout": out})
@@ -94,37 +100,45 @@ async def bindiff(pair: BinPair):
 
 def cache_key_for_function(binary_path: str, function_address: Optional[str], function_names: Optional[str]) -> str:
     s = sha256_file(binary_path)
-    return f"{s}_{function_address or function_names or 'all'}"
+    base_name = os.path.basename(binary_path)
+    # Include the filename so dummy files and real files with matching hashes never collide
+    return f"{base_name}_{s}_{function_address or function_names or 'all'}"
 
 @app.post("/disasm")
 async def disasm(req: FuncRequest):
     binary = abs_path(req.binary)
     if not os.path.exists(binary):
         raise HTTPException(status_code=404, detail="binary not found")
+    
     key = cache_key_for_function(binary, req.function_address, req.function_names)
     cache_file = os.path.join(CACHE_DIR, f"disasm_{key}.json")
-    if os.path.exists(cache_file):
+    
+    if not req.ignore_cache and os.path.exists(cache_file):
         with open(cache_file, "r") as f:
             return json.load(f)
 
-    # Ghidra runs must be serialized by semaphore
     async with ghidra_sem:
-        cmd = ["python3", "tools/ghidra_disasm.py", "--binary", binary, "--ghidra-dir", GHIDRA_INSTALL_DIR, "--output-format", "json"]
+        cmd = ["python3", "tools/ghidra/ghidra_disasm.py", "--binary", binary, "--ghidra-dir", GHIDRA_INSTALL_DIR, "--output-format", "json"]
         if req.function_address:
             cmd.extend(["--function-address", req.function_address])
         if req.function_names:
             cmd.extend(["--function-names", req.function_names])
+        
         code, out, err = await run_subproc(cmd, timeout=req.timeout)
         if code != 0:
             raise HTTPException(status_code=500, detail={"error": err, "stdout": out})
+            
         try:
             parsed = json.loads(out)
         except json.JSONDecodeError:
             parsed = {"raw": out}
-        # cache result
-        os.makedirs(CACHE_DIR, exist_ok=True)
-        with open(cache_file, "w") as f:
-            json.dump(parsed, f)
+            
+        # NEVER cache error responses
+        if "error" not in parsed and parsed.get("status") != "failed":
+            os.makedirs(CACHE_DIR, exist_ok=True)
+            with open(cache_file, "w") as f:
+                json.dump(parsed, f)
+                
         return parsed
 
 @app.post("/decompile")
@@ -132,29 +146,36 @@ async def decompile(req: FuncRequest):
     binary = abs_path(req.binary)
     if not os.path.exists(binary):
         raise HTTPException(status_code=404, detail="binary not found")
+        
     key = cache_key_for_function(binary, req.function_address, req.function_names)
     cache_file = os.path.join(CACHE_DIR, f"decomp_{key}.json")
-    if os.path.exists(cache_file):
+    
+    if not req.ignore_cache and os.path.exists(cache_file):
         with open(cache_file, "r") as f:
             return json.load(f)
 
     async with ghidra_sem:
-        cmd = ["python3", "tools/ghidra_decompile.py", "--binary", binary, "--ghidra-dir", GHIDRA_INSTALL_DIR, "--output-format", "json"]
+        cmd = ["python3", "tools/ghidra/ghidra_decompile.py", "--binary", binary, "--ghidra-dir", GHIDRA_INSTALL_DIR, "--output-format", "json"]
         if req.function_address:
             cmd.extend(["--function-address", req.function_address])
         if req.function_names:
             cmd.extend(["--function-names", req.function_names])
+            
         code, out, err = await run_subproc(cmd, timeout=req.timeout)
         if code != 0:
             raise HTTPException(status_code=500, detail={"error": err, "stdout": out})
+            
         try:
             parsed = json.loads(out)
         except json.JSONDecodeError:
             parsed = {"raw": out}
-        # cache result
-        os.makedirs(CACHE_DIR, exist_ok=True)
-        with open(cache_file, "w") as f:
-            json.dump(parsed, f)
+            
+        # NEVER cache error responses
+        if "error" not in parsed and parsed.get("status") != "failed":
+            os.makedirs(CACHE_DIR, exist_ok=True)
+            with open(cache_file, "w") as f:
+                json.dump(parsed, f)
+                
         return parsed
 
 @app.post("/string_analyzer")
@@ -163,7 +184,7 @@ async def string_analyzer(req: StringAnalyzerRequest):
     if not os.path.exists(binary):
         raise HTTPException(status_code=404, detail="binary not found")
     
-    cmd = ["python3", "tools/string_analyzer.py", "--binary", binary, "--output-format", "json"]
+    cmd = ["python3", "tools/analysis/string_analyzer.py", "--binary", binary, "--output-format", "json"]
     if req.min_length:
         cmd.extend(["--min-length", str(req.min_length)])
     if req.encoding:
@@ -185,7 +206,7 @@ async def symbol_analyzer(req: SymbolAnalyzerRequest):
     if not os.path.exists(binary):
         raise HTTPException(status_code=404, detail="binary not found")
     
-    cmd = ["python3", "tools/symbol_analyzer.py", "--binary", binary, "--output-format", "json"]
+    cmd = ["python3", "tools/analysis/symbol_analyzer.py", "--binary", binary, "--output-format", "json"]
     if req.symbol_types:
         cmd.extend(["--symbol-types", req.symbol_types])
     if req.demangle:

@@ -1,8 +1,7 @@
-# Tools image: Python tools + optional Ghidra install (set GHIDRA_URL build-arg)
+# Tools image: Python tools + Headless Ghidra Engine
 FROM ubuntu:22.04
 
-ARG DEBIAN_FRONTEND=noninteractive
-ARG GHIDRA_URL=""  # set at build time if you want Docker to download Ghidra (e.g. --build-arg GHIDRA_URL=https://.../ghidra_xxx.zip)
+ENV DEBIAN_FRONTEND=noninteractive
 
 # Basic packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -11,39 +10,47 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     binutils file curl wget unzip ca-certificates \
     openjdk-17-jdk \
     nodejs npm \
-    git \
-    tini \
+    git tini \
  && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
 RUN useradd -m -s /bin/bash patch
 WORKDIR /opt/patch-tools
 
-# Copy repo into image (build context should be repo root)
+# Download and extract Ghidra 11.0.3 (Mandatory for headless engine)
+RUN mkdir -p /opt/ghidra \
+    && curl -Lf "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_11.0.3_build/ghidra_11.0.3_PUBLIC_20240410.zip" -o /tmp/ghidra.zip \
+    && unzip -q /tmp/ghidra.zip -d /opt \
+    && mv /opt/ghidra_11.0.3_PUBLIC/* /opt/ghidra/ \
+    && rm -rf /tmp/ghidra.zip /opt/ghidra_11.0.3_PUBLIC
+
+# Copy the offline BinExport release into the build context
+COPY lib/bx.zip /tmp/bx.zip
+
+# Perform the Offline Omni-Transplant
+RUN mkdir -p /opt/ghidra/Ghidra/patch && \
+    unzip -qo /tmp/bx.zip -d /tmp/bx_outer && \
+    INNER_ZIP=$(find /tmp/bx_outer -name "*.zip" | head -n 1) && \
+    unzip -qo "$INNER_ZIP" -d /tmp/bx_ext && \
+    BX_PROTO=$(find /tmp/bx_ext -name "protobuf-java-*.jar" | head -n 1) && \
+    find /opt/ghidra/Ghidra -type f -name "protobuf-java-*.jar" -exec cp -f "$BX_PROTO" {} \; && \
+    find /tmp/bx_ext -name "protobuf-java-*.jar" -type f -delete && \
+    find /tmp/bx_ext -name "guava-*.jar" -type f -delete && \
+    find /tmp/bx_ext -name '*.jar' -exec cp {} /opt/ghidra/Ghidra/patch/ \; && \
+    chmod 644 /opt/ghidra/Ghidra/patch/*.jar && \
+    rm -rf /tmp/bx.zip /tmp/bx_outer /tmp/bx_ext
+
+# Copy repo into image
 COPY . /opt/patch-tools
 
 # Python deps for job server
-COPY requirements-tools.txt /opt/patch-tools/requirements-tools.txt
-RUN python3 -m pip install --upgrade pip setuptools wheel \
- && python3 -m pip install -r /opt/patch-tools/requirements-tools.txt
+RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel \
+ && python3 -m pip install --no-cache-dir -r /opt/patch-tools/requirements-tools.txt
 
-# Optional: Download and extract Ghidra if GHIDRA_URL provided at build time
-# Usage: docker build --build-arg GHIDRA_URL="https://..." -t patch-tools:latest -f Dockerfile.tools .
-RUN if [ -n "$GHIDRA_URL" ]; then \
-      mkdir -p /opt/ghidra_tmp && \
-      echo "Downloading Ghidra from $GHIDRA_URL" && \
-      curl -L --retry 5 "$GHIDRA_URL" -o /tmp/ghidra.zip && \
-      unzip /tmp/ghidra.zip -d /opt && \
-      # move extracted dir to /opt/ghidra (works when archive yields a single dir)
-      mv /opt/ghidra_* /opt/ghidra || true && \
-      rm -rf /tmp/ghidra.zip ; \
-    fi
-
-# Ensure scripts are executable
-RUN chmod +x /opt/patch-tools/tools/*.py || true
-COPY entrypoint.sh /opt/patch-tools/entrypoint.sh
-RUN sed -i 's/\r$//' /opt/patch-tools/entrypoint.sh
-RUN chmod +x /opt/patch-tools/entrypoint.sh
+# Ensure scripts are executable (updated to target subdirectories)
+RUN chmod +x /opt/patch-tools/tools/*/*.py || true \
+ && sed -i 's/\r$//' /opt/patch-tools/entrypoint.sh \
+ && chmod +x /opt/patch-tools/entrypoint.sh
 
 # Expose API port
 EXPOSE 8000
@@ -57,6 +64,5 @@ ENV GHIDRA_INSTALL_DIR=/opt/ghidra
 ENV WORK_DIR=/work
 ENV PYTHONUNBUFFERED=1
 ENV MAX_GHIDRA_JOBS=1
-WORKDIR /opt/patch-tools
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/opt/patch-tools/entrypoint.sh"]
