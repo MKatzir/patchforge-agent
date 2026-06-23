@@ -1,18 +1,9 @@
 # PatchForge: Automated Root-Cause Binary Patch Analysis
 
-## Why This Matters: The WannaCry Case Study
+## Why This Matters: SQL Slammer
 
-In March 2017, Microsoft released security bulletin **MS17-010**, patching CVE-2017-0145 — the "EternalBlue" SMBv1 vulnerability. Two months later, in May 2017, the **WannaCry ransomware worm** weaponized this exploit and infected over **230,000 systems across 150 countries** in a single weekend. The UK's National Health Service was crippled: surgeries cancelled, ambulances diverted. The total damage exceeded **$4 billion**.
-
-The patch existed. The fix was known. But organizations couldn't answer a simple question: *"What actually changed between the patched and unpatched code, and where else in our binaries does this same vulnerable pattern appear?"*
-
-This is the gap PatchForge fills. When a new patch drops, security teams need to:
-- Identify **exactly which functions changed**
-- Understand **why** the change fixes the vulnerability
-- Verify that the same vulnerable pattern doesn't exist elsewhere in their codebase
-
-Doing this manually across thousands of binaries is impractical. PatchForge automates the entire pipeline.
-
+SQL Slammer was a very famous worm hat took over the internet around 9 minutes.
+Microsoft posted a patch --half a year-- before the worm. With this Agent you should be able to find the error they corrected within a few minutes (not half a year).
 ---
 
 ## How to Use the Agent
@@ -209,6 +200,4 @@ Functions with **low similarity** are the ones that changed — these are the pa
 
 ## Summary
 
-PatchForge bridges the gap between **"a patch exists"** and **"we understand what the patch actually fixes."** By automating the four-step pipeline — diff, identify, decompile, explain — it turns a manual, days-long analysis into an autonomous process. The architecture prioritizes defense (separate containers, no exploit tooling), reproducibility (SHA256 caching, chapter system), and debuggability (HTTP endpoints, ToolResult envelope).
-
-As WannaCry demonstrated, having the patch is not enough. You need to understand the root cause, find every vulnerable instance, and verify the fix. PatchForge makes that systematic.
+PatchForge bridges the gap between **"a patch exists"** and **"we understand what the patch actually fixes"** and **"We can create an exploit."**  By automating the four-step pipeline — diff, identify, decompile, explain — it turns a manual, days-long analysis into an autonomous process. The architecture prioritizes defense (separate containers, no exploit tooling), reproducibility (SHA256 caching, chapter system), and debuggability (HTTP endpoints, ToolResult envelope).
