@@ -1,4 +1,6 @@
-Initialize the analysis pipeline.
+Initialize the comprehensive analysis pipeline.
 The unpatched binary is located at '{unpatched}' and the patched binary is at '{patched}'.
 Delegate to the @global-analyzer to begin the BinDiff phase immediately.
 Do not stop until the @global-analyzer has completed the root-cause analysis and you have written the final defensive report in {output_dir}/writeup.md.
+After the writeup is complete, delegate to the @poc-builder to create a proof-of-concept exploit based on the vulnerability findings.
+Do not stop until both the defensive analysis and PoC development are complete.

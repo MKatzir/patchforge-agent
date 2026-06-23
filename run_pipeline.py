@@ -16,6 +16,7 @@ AGENT_FILES = {
     "manager": "/app/.opencode/agents/manager.md",
     "global-analyzer": "/app/.opencode/agents/global-analyzer.md",
     "local-analyzer": "/app/.opencode/agents/local-analyzer.md",
+    "poc-builder": "/app/.opencode/agents/poc-builder.md",
 }
 
 def validate_agents():
